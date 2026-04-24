@@ -70,11 +70,11 @@ function initOptimization() {
     window.onfocus = function () {
         let ipt = document.querySelector("#search_input");
         if (ipt) {
-            ipt.focus();
             window.scrollTo(0, 0);
-            setTimeout(() => {
-                ipt.select();
-            }, 100);
+            ipt.focus();
+            ipt.select();
+            // setTimeout(() => {
+            // }, 100);
         }
     };
 
