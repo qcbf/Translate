@@ -16,6 +16,9 @@ internal class Program
     [DllImport("kernel32.dll")]
     private static extern nint GetConsoleWindow();
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern nint GetModuleHandle(string? lpModuleName);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ShowWindow(nint hWnd, int nCmdShow);
@@ -45,10 +48,31 @@ internal class Program
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint CallWindowProc(nint lpPrevWndFunc, nint hWnd, uint msg, nuint wParam, nint lParam);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern nint SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, nint hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UnhookWindowsHookEx(nint hhk);
+
+    [DllImport("user32.dll")]
+    private static extern nint CallNextHookEx(nint hhk, int nCode, nuint wParam, nint lParam);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
+
     private const int SwHide = 0;
     private const int SwShow = 5;
     private const int GwlWndProc = -4;
     private const uint WmClose = 0x0010;
+    private const int WhKeyboardLl = 13;
+    private const uint WmKeyDown = 0x0100;
+    private const uint WmSysKeyDown = 0x0104;
+    private const int VkControl = 0x11;
+    private const int VkShift = 0x10;
+    private const int VkLWin = 0x5B;
+    private const int VkRWin = 0x5C;
+    private const uint VkT = 0x54;
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string AutoStartValueName = "Translate";
 
@@ -57,8 +81,21 @@ internal class Program
     private static nint _windowHandle;
     private static nint _previousWndProc;
     private static WndProcDelegate? _wndProcDelegate;
+    private static LowLevelKeyboardProc? _keyboardProc;
+    private static nint _keyboardHookHandle;
 
     private delegate nint WndProcDelegate(nint hWnd, uint msg, nuint wParam, nint lParam);
+    private delegate nint LowLevelKeyboardProc(int nCode, nuint wParam, nint lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KbdLlHookStruct
+    {
+        public uint VkCode;
+        public uint ScanCode;
+        public uint Flags;
+        public uint Time;
+        public nuint DwExtraInfo;
+    }
 
     [STAThread]
     private static void Main()
@@ -219,6 +256,8 @@ internal class Program
         _previousWndProc = Environment.Is64BitProcess
             ? SetWindowLongPtr(_windowHandle, GwlWndProc, newWndProc)
             : SetWindowLong32(_windowHandle, GwlWndProc, newWndProc.ToInt32());
+
+        RegisterKeyboardHook();
     }
 
     private static nint CustomWndProc(nint hWnd, uint msg, nuint wParam, nint lParam)
@@ -247,6 +286,57 @@ internal class Program
     private static bool IsWindowCurrentlyVisible()
     {
         return _windowHandle != 0 && IsWindowVisible(_windowHandle);
+    }
+
+    private static void RegisterKeyboardHook()
+    {
+        if (_keyboardHookHandle != 0)
+        {
+            return;
+        }
+
+        _keyboardProc = KeyboardHookCallback;
+        using var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
+        using var currentModule = currentProcess.MainModule;
+        var moduleHandle = GetModuleHandle(currentModule?.ModuleName);
+        _keyboardHookHandle = SetWindowsHookEx(WhKeyboardLl, _keyboardProc, moduleHandle, 0);
+    }
+
+    private static void UnregisterKeyboardHook()
+    {
+        if (_keyboardHookHandle == 0)
+        {
+            return;
+        }
+
+        UnhookWindowsHookEx(_keyboardHookHandle);
+        _keyboardHookHandle = 0;
+        _keyboardProc = null;
+    }
+
+    private static nint KeyboardHookCallback(int nCode, nuint wParam, nint lParam)
+    {
+        if (nCode >= 0 && (wParam == WmKeyDown || wParam == WmSysKeyDown))
+        {
+            var hookData = Marshal.PtrToStructure<KbdLlHookStruct>(lParam);
+            var isTogglePressed = hookData.VkCode == VkT
+                && IsKeyPressed(VkControl)
+                && IsKeyPressed(VkShift)
+                && (IsKeyPressed(VkLWin) || IsKeyPressed(VkRWin));
+
+            if (isTogglePressed)
+            {
+                ToggleWindowVisibility();
+                return 1;
+            }
+        }
+
+        return CallNextHookEx(_keyboardHookHandle, nCode, wParam, lParam);
+    }
+
+    private static bool IsKeyPressed(int virtualKey)
+    {
+        return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
     }
 
     private static void HideMainWindow()
@@ -316,6 +406,8 @@ internal class Program
 
     private static void ExitApplication()
     {
+        UnregisterKeyboardHook();
+
         if (_notifyIcon is not null)
         {
             _notifyIcon.Visible = false;
