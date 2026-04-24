@@ -1,5 +1,48 @@
 'use strict';
 
+(function () {
+    function hostInvoke(message) {
+        if (!window.host) {
+            return Promise.resolve(null);
+        }
+
+        return new Promise((resolve, reject) => {
+            try {
+                window.host(JSON.stringify(message), (result) => {
+                    resolve(result);
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    window.translateHost = {
+        ready: () => hostInvoke({ type: 'ready' }),
+        toggle: () => hostInvoke({ type: 'toggle' }),
+        show: () => hostInvoke({ type: 'show' }),
+        hide: () => hostInvoke({ type: 'hide' }),
+        close: () => hostInvoke({ type: 'close' }),
+        isAutoStartEnabled: async () => (await hostInvoke({ type: 'isAutoStartEnabled' })) === 'true',
+        setAutoStartEnabled: (enabled) => hostInvoke({ type: 'setAutoStartEnabled', enabled: !!enabled }),
+        exit: () => hostInvoke({ type: 'exit' })
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+        window.translateHost.ready().catch(() => {});
+    }, { once: true });
+
+    window.addEventListener('beforeunload', (event) => {
+        if (!window.translateHost) {
+            return;
+        }
+
+        event.preventDefault();
+        event.returnValue = '';
+        window.translateHost.close().catch(() => {});
+    });
+})();
+
 // 确保DOM加载完成后再执行
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initOptimization);
