@@ -2,12 +2,31 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "publish",
+			"label": "publish mini",
 			"type": "shell",
 			"command": "dotnet",
 			"args": [
 				"publish",
 				"./Translate.csproj",
+				"-o",
+				"./bin/Publish"
+			],
+			"group": "build",
+			"problemMatcher": "$msCompile"
+		},
+		{
+			"label": "publish full",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"publish",
+				"./Translate.csproj",
+				"-r",
+				"win-x64",
+				"--self-contained",
+				"true",
+				"-p:EnableCompressionInSingleFile=true",
+				"-p:PublishReadyToRun=false",
 				"-o",
 				"./bin/Publish"
 			],

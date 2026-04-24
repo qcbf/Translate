@@ -22,6 +22,10 @@
         <DeleteExistingFiles>true</DeleteExistingFiles>
         <DebugType>none</DebugType>
         <DebugSymbols>false</DebugSymbols>
+        <SatelliteResourceLanguages>en;zh-CN</SatelliteResourceLanguages>
+        <AppHostDotNetSearch>AppLocal</AppHostDotNetSearch>
+        <GenerateRuntimeConfigDevFile>false</GenerateRuntimeConfigDevFile>
+        <AutoreleasePoolSupport>false</AutoreleasePoolSupport>
     </PropertyGroup>
 
     <ItemGroup>
