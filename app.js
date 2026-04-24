@@ -1,47 +1,46 @@
 'use strict';
 
-(function () {
-    function hostInvoke(message) {
-        if (!window.host) {
-            return Promise.resolve(null);
-        }
 
-        return new Promise((resolve, reject) => {
-            try {
-                window.host(JSON.stringify(message), (result) => {
-                    resolve(result);
-                });
-            } catch (error) {
-                reject(error);
-            }
-        });
+function hostInvoke(message) {
+    if (!window.host) {
+        return Promise.resolve(null);
     }
 
-    window.translateHost = {
-        ready: () => hostInvoke({ type: 'ready' }),
-        toggle: () => hostInvoke({ type: 'toggle' }),
-        show: () => hostInvoke({ type: 'show' }),
-        hide: () => hostInvoke({ type: 'hide' }),
-        close: () => hostInvoke({ type: 'close' }),
-        isAutoStartEnabled: async () => (await hostInvoke({ type: 'isAutoStartEnabled' })) === 'true',
-        setAutoStartEnabled: (enabled) => hostInvoke({ type: 'setAutoStartEnabled', enabled: !!enabled }),
-        exit: () => hostInvoke({ type: 'exit' })
-    };
-
-    window.addEventListener('DOMContentLoaded', () => {
-        window.translateHost.ready().catch(() => {});
-    }, { once: true });
-
-    window.addEventListener('beforeunload', (event) => {
-        if (!window.translateHost) {
-            return;
+    return new Promise((resolve, reject) => {
+        try {
+            window.host(JSON.stringify(message), (result) => {
+                resolve(result);
+            });
+        } catch (error) {
+            reject(error);
         }
-
-        event.preventDefault();
-        event.returnValue = '';
-        window.translateHost.close().catch(() => {});
     });
-})();
+}
+
+window.translateHost = {
+    ready: () => hostInvoke({ type: 'ready' }),
+    toggle: () => hostInvoke({ type: 'toggle' }),
+    show: () => hostInvoke({ type: 'show' }),
+    hide: () => hostInvoke({ type: 'hide' }),
+    close: () => hostInvoke({ type: 'close' }),
+    isAutoStartEnabled: async () => (await hostInvoke({ type: 'isAutoStartEnabled' })) === 'true',
+    setAutoStartEnabled: (enabled) => hostInvoke({ type: 'setAutoStartEnabled', enabled: !!enabled }),
+    exit: () => hostInvoke({ type: 'exit' })
+};
+
+window.addEventListener('DOMContentLoaded', () => {
+    window.translateHost.ready().catch(() => { });
+}, { once: true });
+
+window.addEventListener('beforeunload', (event) => {
+    if (!window.translateHost) {
+        return;
+    }
+
+    event.preventDefault();
+    event.returnValue = '';
+    window.translateHost.close().catch(() => { });
+});
 
 // 确保DOM加载完成后再执行
 if (document.readyState === 'loading') {
@@ -68,7 +67,7 @@ function initOptimization() {
     }
 
     // 页面焦点事件优化
-    window.onfocus = function() {
+    window.onfocus = function () {
         let ipt = document.querySelector("#search_input");
         if (ipt) {
             ipt.focus();
@@ -79,12 +78,12 @@ function initOptimization() {
         }
     };
 
-    window.onblur = function() {
+    window.onblur = function () {
         localStorage.removeItem("historyList");
     };
 
     // 延迟执行部分初始化操作
-    setTimeout(function() {
+    setTimeout(function () {
         Element("#autosuggest-autosuggest__results", el => el.style.pointerEvents = "none");
         RemoveElement(".top-banner-wrap");
     }, 500);

@@ -36,6 +36,23 @@ internal class Program
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFocus(nint hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetActiveWindow(nint hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsIconic(nint hWnd);
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -98,6 +115,7 @@ internal class Program
     private const int GwlWndProc = -4;
     private const uint WmClose = 0x0010;
     private const uint WmCommand = 0x0111;
+    private const uint WmActivate = 0x0006;
     private const uint WmApp = 0x8000;
     private const uint WmTrayIcon = WmApp + 1;
     private const uint WmLButtonUp = 0x0202;
@@ -130,6 +148,7 @@ internal class Program
     private const uint MenuToggleWindow = 1001;
     private const uint MenuAutoStart = 1002;
     private const uint MenuExit = 1003;
+    private const int WaInactive = 0;
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string AutoStartValueName = "Translate";
 
@@ -143,6 +162,7 @@ internal class Program
     private static bool _notifyIconCreated;
     private static nint _notifyIconHandle;
     private static string? _notifyIconTempPath;
+    private static bool _suppressAutoHide;
 
     private delegate nint WndProcDelegate(nint hWnd, uint msg, nuint wParam, nint lParam);
     private delegate nint LowLevelKeyboardProc(int nCode, nuint wParam, nint lParam);
@@ -342,7 +362,18 @@ internal class Program
             return 0;
         }
 
+        if (msg == WmActivate && LowWord(wParam) == WaInactive && !_suppressAutoHide && IsWindowCurrentlyVisible())
+        {
+            HideMainWindow();
+            return 0;
+        }
+
         return CallWindowProc(_previousWndProc, hWnd, msg, wParam, lParam);
+    }
+
+    private static int LowWord(nuint value)
+    {
+        return (int)(value & 0xFFFF);
     }
 
     private static void ToggleWindowVisibility()
@@ -495,11 +526,13 @@ internal class Program
                 return;
             }
 
+            _suppressAutoHide = true;
             SetForegroundWindow(hWnd);
             TrackPopupMenu(menuHandle, TpMLeftAlign | TpMRightButton, point.X, point.Y, 0, hWnd, 0);
         }
         finally
         {
+            _suppressAutoHide = false;
             DestroyMenu(menuHandle);
         }
     }
@@ -594,9 +627,40 @@ internal class Program
                 ShowWindow(_windowHandle, SwShow);
             }
 
-            BringWindowToTop(_windowHandle);
-            SetForegroundWindow(_windowHandle);
+            ActivateMainWindow();
         });
+    }
+
+    private static void ActivateMainWindow()
+    {
+        if (_windowHandle == 0)
+        {
+            return;
+        }
+
+        var currentThreadId = GetCurrentThreadId();
+        var windowThreadId = GetWindowThreadProcessId(_windowHandle, out _);
+        var attached = false;
+
+        try
+        {
+            if (windowThreadId != 0 && windowThreadId != currentThreadId)
+            {
+                attached = AttachThreadInput(currentThreadId, windowThreadId, true);
+            }
+
+            BringWindowToTop(_windowHandle);
+            SetActiveWindow(_windowHandle);
+            SetForegroundWindow(_windowHandle);
+            SetFocus(_windowHandle);
+        }
+        finally
+        {
+            if (attached)
+            {
+                AttachThreadInput(currentThreadId, windowThreadId, false);
+            }
+        }
     }
 
     [SupportedOSPlatform("windows")]
