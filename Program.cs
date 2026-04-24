@@ -1,9 +1,9 @@
-﻿using System.Reflection;
+﻿using System.Drawing;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using System.Text.Json;
 using System.Text;
-using System.Drawing;
+using System.Text.Json;
 using Microsoft.Win32;
 using SharpWebview;
 using SharpWebview.Content;
@@ -59,6 +59,13 @@ internal class Program
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint LoadIcon(nint hInstance, nint lpIconName);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern nint LoadImage(nint hInst, string lpszName, uint uType, int cxDesired, int cyDesired, uint fuLoad);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DestroyIcon(nint hIcon);
+
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool Shell_NotifyIcon(uint dwMessage, ref NotifyIconData lpData);
@@ -111,8 +118,14 @@ internal class Program
     private const uint NifMessage = 0x00000001;
     private const uint NifIcon = 0x00000002;
     private const uint NifTip = 0x00000004;
+    private const uint NifState = 0x00000008;
+    private const uint NisHidden = 0x00000001;
     private const uint NimAdd = 0x00000000;
+    private const uint NimModify = 0x00000001;
     private const uint NimDelete = 0x00000002;
+    private const uint ImageIcon = 1;
+    private const uint LrDefaultSize = 0x00000040;
+    private const uint LrLoadFromFile = 0x00000010;
     private const int IdiApplication = 0x7F00;
     private const uint MenuToggleWindow = 1001;
     private const uint MenuAutoStart = 1002;
@@ -128,6 +141,8 @@ internal class Program
     private static nint _keyboardHookHandle;
     private static NotifyIconData _notifyIconData;
     private static bool _notifyIconCreated;
+    private static nint _notifyIconHandle;
+    private static string? _notifyIconTempPath;
 
     private delegate nint WndProcDelegate(nint hWnd, uint msg, nuint wParam, nint lParam);
     private delegate nint LowLevelKeyboardProc(int nCode, nuint wParam, nint lParam);
@@ -354,6 +369,7 @@ internal class Program
             return;
         }
 
+        _notifyIconHandle = LoadNotifyIconHandle();
         _notifyIconData = new NotifyIconData
         {
             CbSize = (uint)Marshal.SizeOf<NotifyIconData>(),
@@ -361,7 +377,7 @@ internal class Program
             UId = 1,
             UFlags = NifMessage | NifIcon | NifTip,
             UCallbackMessage = WmTrayIcon,
-            HIcon = LoadIcon(0, IdiApplication),
+            HIcon = _notifyIconHandle,
             SzTip = Assembly.GetExecutingAssembly().GetName().Name ?? "Translate",
             SzInfo = string.Empty,
             SzInfoTitle = string.Empty,
@@ -369,17 +385,94 @@ internal class Program
         };
 
         _notifyIconCreated = Shell_NotifyIcon(NimAdd, ref _notifyIconData);
-    }
-
-    private static void RemoveNotifyIcon()
-    {
         if (!_notifyIconCreated)
         {
             return;
         }
 
-        Shell_NotifyIcon(NimDelete, ref _notifyIconData);
-        _notifyIconCreated = false;
+        _notifyIconData.UFlags = NifState;
+        _notifyIconData.DwState = 0;
+        _notifyIconData.DwStateMask = NisHidden;
+        Shell_NotifyIcon(NimModify, ref _notifyIconData);
+
+        _notifyIconData.UFlags = NifMessage | NifIcon | NifTip;
+        _notifyIconData.DwState = 0;
+        _notifyIconData.DwStateMask = 0;
+        Shell_NotifyIcon(NimModify, ref _notifyIconData);
+    }
+
+    private static nint LoadNotifyIconHandle()
+    {
+        var embeddedIconPath = ExtractEmbeddedIconToTempFile();
+        if (!string.IsNullOrEmpty(embeddedIconPath))
+        {
+            var iconHandle = LoadImage(0, embeddedIconPath, ImageIcon, 0, 0, LrLoadFromFile | LrDefaultSize);
+            if (iconHandle != 0)
+            {
+                return iconHandle;
+            }
+        }
+
+        var moduleHandle = GetModuleHandle(null);
+        if (moduleHandle != 0)
+        {
+            var resourceHandle = LoadIcon(moduleHandle, new nint(1));
+            if (resourceHandle != 0)
+            {
+                return resourceHandle;
+            }
+        }
+
+        return LoadIcon(0, IdiApplication);
+    }
+
+    private static string? ExtractEmbeddedIconToTempFile()
+    {
+        if (!string.IsNullOrEmpty(_notifyIconTempPath) && File.Exists(_notifyIconTempPath))
+        {
+            return _notifyIconTempPath;
+        }
+
+        var assembly = Assembly.GetExecutingAssembly();
+        using var iconStream = assembly.GetManifestResourceStream("app.ico");
+        if (iconStream is null)
+        {
+            return null;
+        }
+
+        _notifyIconTempPath = Path.Combine(Path.GetTempPath(), $"Translate-{assembly.GetName().Version}-{Environment.ProcessId}.ico");
+
+        using var fileStream = File.Create(_notifyIconTempPath);
+        iconStream.CopyTo(fileStream);
+        return _notifyIconTempPath;
+    }
+
+    private static void RemoveNotifyIcon()
+    {
+        if (_notifyIconCreated)
+        {
+            Shell_NotifyIcon(NimDelete, ref _notifyIconData);
+            _notifyIconCreated = false;
+        }
+
+        if (_notifyIconHandle != 0)
+        {
+            DestroyIcon(_notifyIconHandle);
+            _notifyIconHandle = 0;
+        }
+
+        if (!string.IsNullOrEmpty(_notifyIconTempPath) && File.Exists(_notifyIconTempPath))
+        {
+            try
+            {
+                File.Delete(_notifyIconTempPath);
+            }
+            catch
+            {
+            }
+
+            _notifyIconTempPath = null;
+        }
     }
 
     private static void ShowNotifyIconMenu(nint hWnd)

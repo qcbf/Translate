@@ -28,7 +28,9 @@
 
     <ItemGroup>
         <None Remove="app.js"/>
+        <None Remove="app.ico"/>
         <EmbeddedResource Include="app.js" LogicalName="js"/>
+        <EmbeddedResource Include="app.ico" LogicalName="app.ico"/>
     </ItemGroup>
 
     <ItemGroup>
