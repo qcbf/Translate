@@ -1,0 +1,18 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "publish",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"publish",
+				"./Translate.csproj",
+				"-o",
+				"./bin/Publish"
+			],
+			"group": "build",
+			"problemMatcher": "$msCompile"
+		}
+	]
+}
