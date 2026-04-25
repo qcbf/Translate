@@ -45,12 +45,20 @@ internal static class Program
     private const string AutoStartValueName = "Translate";
     private const int WhKeyboardLl = 13;
     private const uint WmKeyDown = 0x0100;
+    private const uint WmKeyUp = 0x0101;
     private const uint WmSysKeyDown = 0x0104;
+    private const uint WmSysKeyUp = 0x0105;
     private const int VkControl = 0x11;
+    private const int VkMenu = 0x12;
     private const int VkShift = 0x10;
     private const int VkLWin = 0x5B;
     private const int VkRWin = 0x5C;
+    private const uint VkLeft = 0x25;
+    private const uint VkUp = 0x26;
+    private const uint VkRight = 0x27;
+    private const uint VkDown = 0x28;
     private const uint VkT = 0x54;
+    private const int WindowMoveStep = 20;
     private const uint SwpNoMove = 0x0002;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpShowWindow = 0x0040;
@@ -60,6 +68,7 @@ internal static class Program
 
     private static LowLevelKeyboardProc? _keyboardProc;
     private static nint _keyboardHookHandle;
+    private static ShellForm.MoveDirection? _activeMoveDirection;
 
     private delegate nint LowLevelKeyboardProc(int nCode, nuint wParam, nint lParam);
 
@@ -97,11 +106,21 @@ internal static class Program
 
     private sealed class ShellForm : Form
     {
+        public enum MoveDirection
+        {
+            Left,
+            Up,
+            Right,
+            Down
+        }
+
         private readonly WebView2 _webView;
         private readonly string _userDataFolder;
         private readonly NotifyIcon _notifyIcon;
         private readonly ContextMenuStrip _notifyMenu;
+        private readonly System.Windows.Forms.Timer _moveTimer;
         private bool _hasCompletedFirstShow;
+        private MoveDirection? _currentMoveDirection;
 
         public static ShellForm? Instance { get; private set; }
 
@@ -142,6 +161,12 @@ internal static class Program
                 Icon = Icon ?? SystemIcons.Application
             };
             _notifyIcon.DoubleClick += (_, _) => ShowMainWindow();
+
+            _moveTimer = new System.Windows.Forms.Timer
+            {
+                Interval = 16
+            };
+            _moveTimer.Tick += (_, _) => MoveWindowStep();
 
             Controls.Add(_webView);
             Load += OnLoadAsync;
@@ -294,6 +319,29 @@ internal static class Program
             _ = FocusSearchInputAsync();
         }
 
+        public void StartWindowMove(MoveDirection direction)
+        {
+            if (!Visible || WindowState == FormWindowState.Minimized)
+            {
+                return;
+            }
+
+            _currentMoveDirection = direction;
+            MoveWindowStep();
+            _moveTimer.Start();
+        }
+
+        public void StopWindowMove(MoveDirection direction)
+        {
+            if (_currentMoveDirection != direction)
+            {
+                return;
+            }
+
+            _currentMoveDirection = null;
+            _moveTimer.Stop();
+        }
+
         private void HideMainWindow()
         {
             if (!_hasCompletedFirstShow)
@@ -348,6 +396,34 @@ internal static class Program
             using var iconStream = assembly.GetManifestResourceStream("app.ico");
             return iconStream is null ? null : new Icon(iconStream);
         }
+
+        private void MoveWindowStep()
+        {
+            if (_currentMoveDirection is null)
+            {
+                _moveTimer.Stop();
+                return;
+            }
+
+            var bounds = Bounds;
+            switch (_currentMoveDirection)
+            {
+                case MoveDirection.Left:
+                    bounds.X -= WindowMoveStep;
+                    break;
+                case MoveDirection.Up:
+                    bounds.Y -= WindowMoveStep;
+                    break;
+                case MoveDirection.Right:
+                    bounds.X += WindowMoveStep;
+                    break;
+                case MoveDirection.Down:
+                    bounds.Y += WindowMoveStep;
+                    break;
+            }
+
+            Bounds = bounds;
+        }
     }
 
     private static void RegisterKeyboardHook()
@@ -376,22 +452,62 @@ internal static class Program
 
     private static nint KeyboardHookCallback(int nCode, nuint wParam, nint lParam)
     {
-        if (nCode >= 0 && (wParam == WmKeyDown || wParam == WmSysKeyDown))
+        if (nCode >= 0)
         {
             var hookData = Marshal.PtrToStructure<KbdLlHookStruct>(lParam);
-            var isTogglePressed = hookData.VkCode == VkT
-                && IsKeyPressed(VkControl)
-                && IsKeyPressed(VkShift)
-                && (IsKeyPressed(VkLWin) || IsKeyPressed(VkRWin));
-
-            if (isTogglePressed && ShellForm.Instance is not null)
+            if ((wParam == WmKeyDown || wParam == WmSysKeyDown))
             {
-                ShellForm.Instance.BeginInvoke(ShellForm.Instance.ToggleVisibility);
-                return 1;
+                var isTogglePressed = hookData.VkCode == VkT
+                    && IsKeyPressed(VkControl)
+                    && IsKeyPressed(VkShift)
+                    && (IsKeyPressed(VkLWin) || IsKeyPressed(VkRWin));
+
+                if (isTogglePressed && ShellForm.Instance is not null)
+                {
+                    ShellForm.Instance.BeginInvoke(ShellForm.Instance.ToggleVisibility);
+                    return 1;
+                }
+
+                if (IsKeyPressed(VkMenu) && TryGetMoveDirection(hookData.VkCode, out var moveDirection) && ShellForm.Instance is not null)
+                {
+                    _activeMoveDirection = moveDirection;
+                    ShellForm.Instance.BeginInvoke(() => ShellForm.Instance.StartWindowMove(moveDirection));
+                    return 1;
+                }
+            }
+
+            if ((wParam == WmKeyUp || wParam == WmSysKeyUp) && ShellForm.Instance is not null)
+            {
+                if (TryGetMoveDirection(hookData.VkCode, out var releasedDirection) && _activeMoveDirection == releasedDirection)
+                {
+                    _activeMoveDirection = null;
+                    ShellForm.Instance.BeginInvoke(() => ShellForm.Instance.StopWindowMove(releasedDirection));
+                    return 1;
+                }
+
+                if (hookData.VkCode == VkMenu && _activeMoveDirection is { } activeDirection)
+                {
+                    _activeMoveDirection = null;
+                    ShellForm.Instance.BeginInvoke(() => ShellForm.Instance.StopWindowMove(activeDirection));
+                }
             }
         }
 
         return CallNextHookEx(_keyboardHookHandle, nCode, wParam, lParam);
+    }
+
+    private static bool TryGetMoveDirection(uint virtualKey, out ShellForm.MoveDirection direction)
+    {
+        direction = virtualKey switch
+        {
+            VkLeft => ShellForm.MoveDirection.Left,
+            VkUp => ShellForm.MoveDirection.Up,
+            VkRight => ShellForm.MoveDirection.Right,
+            VkDown => ShellForm.MoveDirection.Down,
+            _ => default
+        };
+
+        return virtualKey is VkLeft or VkUp or VkRight or VkDown;
     }
 
     private static bool IsKeyPressed(int virtualKey)
