@@ -1,22 +1,20 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Runtime.Versioning;
-using System.Text;
-using System.Text.Json;
 using Microsoft.Win32;
-using SharpWebview;
-using SharpWebview.Content;
+using System.Windows.Forms;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
 
 namespace Translate;
 
-internal class Program
+internal static class Program
 {
-    [DllImport("kernel32.dll")]
-    private static extern nint GetConsoleWindow();
-
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern nint GetModuleHandle(string? lpModuleName);
+
+    [DllImport("kernel32.dll")]
+    private static extern nint GetConsoleWindow();
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -24,81 +22,7 @@ internal class Program
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool IsWindowVisible(nint hWnd);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetForegroundWindow(nint hWnd);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool BringWindowToTop(nint hWnd);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetFocus(nint hWnd);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetActiveWindow(nint hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
-
-    [DllImport("kernel32.dll")]
-    private static extern uint GetCurrentThreadId();
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool IsIconic(nint hWnd);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern nint CreatePopupMenu();
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool DestroyMenu(nint hMenu);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AppendMenu(nint hMenu, uint uFlags, nuint uIDNewItem, string lpNewItem);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern int TrackPopupMenu(nint hMenu, uint uFlags, int x, int y, int nReserved, nint hWnd, nint prcRect);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetCursorPos(out Point lpPoint);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern nint LoadIcon(nint hInstance, nint lpIconName);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern nint LoadImage(nint hInst, string lpszName, uint uType, int cxDesired, int cyDesired, uint fuLoad);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool DestroyIcon(nint hIcon);
-
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool Shell_NotifyIcon(uint dwMessage, ref NotifyIconData lpData);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern nint SetWindowLongPtr(nint hWnd, int nIndex, nint dwNewLong);
-
-    [DllImport("user32.dll", EntryPoint = "SetWindowLong", SetLastError = true)]
-    private static extern int SetWindowLong32(nint hWnd, int nIndex, int dwNewLong);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern nint CallWindowProc(nint lpPrevWndFunc, nint hWnd, uint msg, nuint wParam, nint lParam);
+    private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, nint hMod, uint dwThreadId);
@@ -113,25 +37,10 @@ internal class Program
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
 
-    [DllImport("user32.dll")]
-    private static extern nint GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AllowSetForegroundWindow(uint dwProcessId);
-
     private const int SwHide = 0;
-    private const int SwShow = 5;
-    private const int SwRestore = 9;
-    private const int GwlWndProc = -4;
-    private const int GwlExStyle = -20;
-    private const uint WmClose = 0x0010;
-    private const uint WmCommand = 0x0111;
-    private const uint WmActivate = 0x0006;
-    private const uint WmApp = 0x8000;
-    private const uint WmTrayIcon = WmApp + 1;
-    private const uint WmLButtonUp = 0x0202;
-    private const uint WmRButtonUp = 0x0205;
+    private const string TargetUrl = "https://dict.youdao.com/result?word=.";
+    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string AutoStartValueName = "Translate";
     private const int WhKeyboardLl = 13;
     private const uint WmKeyDown = 0x0100;
     private const uint WmSysKeyDown = 0x0104;
@@ -140,50 +49,16 @@ internal class Program
     private const int VkLWin = 0x5B;
     private const int VkRWin = 0x5C;
     private const uint VkT = 0x54;
-    private const uint MfString = 0x00000000;
-    private const uint MfSeparator = 0x00000800;
-    private const uint MfChecked = 0x00000008;
-    private const uint TpMLeftAlign = 0x0000;
-    private const uint TpMRightButton = 0x0002;
-    private const uint NifMessage = 0x00000001;
-    private const uint NifIcon = 0x00000002;
-    private const uint NifTip = 0x00000004;
-    private const uint NifState = 0x00000008;
-    private const uint NisHidden = 0x00000001;
-    private const uint NimAdd = 0x00000000;
-    private const uint NimModify = 0x00000001;
-    private const uint NimDelete = 0x00000002;
-    private const uint ImageIcon = 1;
-    private const uint LrDefaultSize = 0x00000040;
-    private const uint LrLoadFromFile = 0x00000010;
-    private const int IdiApplication = 0x7F00;
-    private const uint SwpNomove = 0x0002;
-    private const uint SwpNosize = 0x0001;
-    private const uint SwpNoactivate = 0x0010;
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpShowWindow = 0x0040;
+
     private static readonly nint HwndTopMost = new(-1);
     private static readonly nint HwndNotTopMost = new(-2);
-    private const uint MenuToggleWindow = 1001;
-    private const uint MenuAutoStart = 1002;
-    private const uint MenuExit = 1003;
-    private const int WaInactive = 0;
-    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string AutoStartValueName = "Translate";
 
-    private static Webview? _webview;
-    private static nint _windowHandle;
-    private static nint _previousWndProc;
-    private static WndProcDelegate? _wndProcDelegate;
     private static LowLevelKeyboardProc? _keyboardProc;
     private static nint _keyboardHookHandle;
-    private static NotifyIconData _notifyIconData;
-    private static bool _notifyIconCreated;
-    private static nint _notifyIconHandle;
-    private static string? _notifyIconTempPath;
-    private static bool _suppressAutoHide;
-    private static int _showWindowNesting;
-    private static bool _pendingKeyboardActivation;
 
-    private delegate nint WndProcDelegate(nint hWnd, uint msg, nuint wParam, nint lParam);
     private delegate nint LowLevelKeyboardProc(int nCode, nuint wParam, nint lParam);
 
     [StructLayout(LayoutKind.Sequential)]
@@ -196,35 +71,6 @@ internal class Program
         public nuint DwExtraInfo;
     }
 
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct NotifyIconData
-    {
-        public uint CbSize;
-        public nint HWnd;
-        public uint UId;
-        public uint UFlags;
-        public uint UCallbackMessage;
-        public nint HIcon;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-        public string SzTip;
-
-        public uint DwState;
-        public uint DwStateMask;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
-        public string SzInfo;
-
-        public uint UTimeoutOrVersion;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
-        public string SzInfoTitle;
-
-        public uint DwInfoFlags;
-        public Guid GuidItem;
-        public nint HBalloonIcon;
-    }
-
     [STAThread]
     private static void Main()
     {
@@ -234,325 +80,262 @@ internal class Program
             ShowWindow(consoleWindow, SwHide);
         }
 
-        var asm = Assembly.GetExecutingAssembly();
-        using var jsSteam = asm.GetManifestResourceStream("js")!;
-        var jsBytes = new byte[jsSteam.Length];
-        jsSteam.ReadExactly(jsBytes);
-        var js = Encoding.UTF8.GetString(jsBytes);
-
-        using var webview = new Webview();
-        _webview = webview;
-
-        webview.Dispatch(InitializeWindowHook);
-
-        webview.SetTitle(asm.GetName().Name)
-            .SetSize(620, 520, WebviewHint.None)
-            .Bind("host", HandleHostMessage)
-            .InitScript(js)
-            .Navigate(new UrlContent("https://dict.youdao.com/result?word=."))
-            .Run();
-
-        RemoveNotifyIcon();
-        _webview = null;
-    }
-
-    private static void HandleHostMessage(string id, string payload)
-    {
-        if (_webview is null)
-        {
-            return;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(payload);
-            var root = document.RootElement;
-            var type = root.TryGetProperty("type", out var typeElement) ? typeElement.GetString() : null;
-
-            switch (type)
-            {
-                case "ready":
-                    _webview.Return(id, RPCResult.Success, "true");
-                    break;
-                case "toggle":
-                    ToggleWindowVisibility();
-                    _webview.Return(id, RPCResult.Success, "true");
-                    break;
-                case "show":
-                    ShowMainWindow();
-                    _webview.Return(id, RPCResult.Success, "true");
-                    break;
-                case "hide":
-                    HideMainWindow();
-                    _webview.Return(id, RPCResult.Success, "true");
-                    break;
-                case "close":
-                    HideMainWindow();
-                    _webview.Return(id, RPCResult.Success, "true");
-                    break;
-                case "isAutoStartEnabled":
-                    _webview.Return(id, RPCResult.Success, OperatingSystem.IsWindows() && IsAutoStartEnabled() ? "true" : "false");
-                    break;
-                case "setAutoStartEnabled":
-                    var enabled = root.TryGetProperty("enabled", out var enabledElement) && enabledElement.GetBoolean();
-                    if (OperatingSystem.IsWindows())
-                    {
-                        SetAutoStartEnabled(enabled);
-                    }
-                    _webview.Return(id, RPCResult.Success, enabled ? "true" : "false");
-                    break;
-                case "exit":
-                    _webview.Return(id, RPCResult.Success, "true");
-                    ExitApplication();
-                    break;
-                default:
-                    _webview.Return(id, RPCResult.Error, "Unsupported action");
-                    break;
-            }
-        }
-        catch (Exception ex)
-        {
-            _webview.Return(id, RPCResult.Error, ex.Message);
-        }
-    }
-
-    private static void InitializeWindowHook()
-    {
-        if (_webview is null || _previousWndProc != 0)
-        {
-            return;
-        }
-
-        _windowHandle = _webview.GetWindow();
-        if (_windowHandle == 0)
-        {
-            return;
-        }
-
-        _wndProcDelegate = CustomWndProc;
-        var newWndProc = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate);
-        _previousWndProc = Environment.Is64BitProcess
-            ? SetWindowLongPtr(_windowHandle, GwlWndProc, newWndProc)
-            : SetWindowLong32(_windowHandle, GwlWndProc, newWndProc.ToInt32());
-
-        CreateNotifyIcon();
+        ApplicationConfiguration.Initialize();
         RegisterKeyboardHook();
+        using var form = new ShellForm();
+        Application.Run(form);
+        UnregisterKeyboardHook();
     }
 
-    private static nint CustomWndProc(nint hWnd, uint msg, nuint wParam, nint lParam)
+    private sealed class ShellForm : Form
     {
-        if (msg == WmTrayIcon)
+        private readonly WebView2 _webView;
+        private readonly string _userDataFolder;
+        private readonly NotifyIcon _notifyIcon;
+        private readonly ContextMenuStrip _notifyMenu;
+        private bool _hasCompletedFirstShow;
+
+        public static ShellForm? Instance { get; private set; }
+
+        public ShellForm()
         {
-            if ((uint)lParam == WmLButtonUp)
+            Instance = this;
+            ShowInTaskbar = true;
+            WindowState = FormWindowState.Normal;
+            Text = Assembly.GetExecutingAssembly().GetName().Name ?? "Translate";
+            Width = 620;
+            Height = 520;
+            StartPosition = FormStartPosition.CenterScreen;
+            MinimumSize = new Size(620, 520);
+            Icon = LoadApplicationIcon();
+            _userDataFolder = Path.Combine(Path.GetTempPath(), "Translate", "WebView2");
+
+            _webView = new WebView2
             {
-                ToggleWindowVisibility();
-                return 0;
-            }
+                Dock = DockStyle.Fill,
+                DefaultBackgroundColor = Color.White
+            };
 
-            if ((uint)lParam == WmRButtonUp)
+            _notifyMenu = new ContextMenuStrip();
+            _notifyMenu.Items.Add("显示/隐藏", null, (_, _) => ToggleVisibility());
+            _notifyMenu.Items.Add(new ToolStripMenuItem("开机自启")
             {
-                ShowNotifyIconMenu(hWnd);
-                return 0;
-            }
-        }
+                Checked = IsAutoStartEnabled()
+            });
+            _notifyMenu.Items[1].Click += (_, _) => ToggleAutoStart();
+            _notifyMenu.Items.Add(new ToolStripSeparator());
+            _notifyMenu.Items.Add("退出", null, (_, _) => ExitApplication());
 
-        if (msg == WmCommand)
-        {
-            switch ((uint)(wParam & 0xFFFF))
+            _notifyIcon = new NotifyIcon
             {
-                case MenuToggleWindow:
-                    ToggleWindowVisibility();
-                    return 0;
-                case MenuAutoStart:
-                    if (OperatingSystem.IsWindows())
-                    {
-                        SetAutoStartEnabled(!IsAutoStartEnabled());
-                    }
-                    return 0;
-                case MenuExit:
-                    ExitApplication();
-                    return 0;
-            }
+                Text = Text,
+                Visible = true,
+                ContextMenuStrip = _notifyMenu,
+                Icon = Icon ?? SystemIcons.Application
+            };
+            _notifyIcon.DoubleClick += (_, _) => ShowMainWindow();
+
+            Controls.Add(_webView);
+            Load += OnLoadAsync;
+            Resize += OnResize;
+            FormClosing += OnFormClosing;
+            Shown += OnShown;
         }
 
-        if (msg == WmClose)
-        {
-            HideMainWindow();
-            return 0;
-        }
-
-        if (msg == WmActivate && LowWord(wParam) == WaInactive && !_suppressAutoHide && IsWindowCurrentlyVisible())
-        {
-            HideMainWindow();
-            return 0;
-        }
-
-        return CallWindowProc(_previousWndProc, hWnd, msg, wParam, lParam);
-    }
-
-    private static int LowWord(nuint value)
-    {
-        return (int)(value & 0xFFFF);
-    }
-
-    private static void ToggleWindowVisibility()
-    {
-        if (IsWindowCurrentlyVisible())
-        {
-            HideMainWindow();
-        }
-        else
-        {
-            ShowMainWindow();
-        }
-    }
-
-    private static bool IsWindowCurrentlyVisible()
-    {
-        return _windowHandle != 0 && IsWindowVisible(_windowHandle);
-    }
-
-    private static void CreateNotifyIcon()
-    {
-        if (_windowHandle == 0 || _notifyIconCreated)
-        {
-            return;
-        }
-
-        _notifyIconHandle = LoadNotifyIconHandle();
-        _notifyIconData = new NotifyIconData
-        {
-            CbSize = (uint)Marshal.SizeOf<NotifyIconData>(),
-            HWnd = _windowHandle,
-            UId = 1,
-            UFlags = NifMessage | NifIcon | NifTip,
-            UCallbackMessage = WmTrayIcon,
-            HIcon = _notifyIconHandle,
-            SzTip = Assembly.GetExecutingAssembly().GetName().Name ?? "Translate",
-            SzInfo = string.Empty,
-            SzInfoTitle = string.Empty,
-            GuidItem = Guid.Empty
-        };
-
-        _notifyIconCreated = Shell_NotifyIcon(NimAdd, ref _notifyIconData);
-        if (!_notifyIconCreated)
-        {
-            return;
-        }
-
-        _notifyIconData.UFlags = NifState;
-        _notifyIconData.DwState = 0;
-        _notifyIconData.DwStateMask = NisHidden;
-        Shell_NotifyIcon(NimModify, ref _notifyIconData);
-
-        _notifyIconData.UFlags = NifMessage | NifIcon | NifTip;
-        _notifyIconData.DwState = 0;
-        _notifyIconData.DwStateMask = 0;
-        Shell_NotifyIcon(NimModify, ref _notifyIconData);
-    }
-
-    private static nint LoadNotifyIconHandle()
-    {
-        var embeddedIconPath = ExtractEmbeddedIconToTempFile();
-        if (!string.IsNullOrEmpty(embeddedIconPath))
-        {
-            var iconHandle = LoadImage(0, embeddedIconPath, ImageIcon, 0, 0, LrLoadFromFile | LrDefaultSize);
-            if (iconHandle != 0)
-            {
-                return iconHandle;
-            }
-        }
-
-        var moduleHandle = GetModuleHandle(null);
-        if (moduleHandle != 0)
-        {
-            var resourceHandle = LoadIcon(moduleHandle, new nint(1));
-            if (resourceHandle != 0)
-            {
-                return resourceHandle;
-            }
-        }
-
-        return LoadIcon(0, IdiApplication);
-    }
-
-    private static string? ExtractEmbeddedIconToTempFile()
-    {
-        if (!string.IsNullOrEmpty(_notifyIconTempPath) && File.Exists(_notifyIconTempPath))
-        {
-            return _notifyIconTempPath;
-        }
-
-        var assembly = Assembly.GetExecutingAssembly();
-        using var iconStream = assembly.GetManifestResourceStream("app.ico");
-        if (iconStream is null)
-        {
-            return null;
-        }
-
-        _notifyIconTempPath = Path.Combine(Path.GetTempPath(), $"Translate-{assembly.GetName().Version}-{Environment.ProcessId}.ico");
-
-        using var fileStream = File.Create(_notifyIconTempPath);
-        iconStream.CopyTo(fileStream);
-        return _notifyIconTempPath;
-    }
-
-    private static void RemoveNotifyIcon()
-    {
-        if (_notifyIconCreated)
-        {
-            Shell_NotifyIcon(NimDelete, ref _notifyIconData);
-            _notifyIconCreated = false;
-        }
-
-        if (_notifyIconHandle != 0)
-        {
-            DestroyIcon(_notifyIconHandle);
-            _notifyIconHandle = 0;
-        }
-
-        if (!string.IsNullOrEmpty(_notifyIconTempPath) && File.Exists(_notifyIconTempPath))
+        private async void OnLoadAsync(object? sender, EventArgs e)
         {
             try
             {
-                File.Delete(_notifyIconTempPath);
+                Directory.CreateDirectory(_userDataFolder);
+                var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: _userDataFolder);
+                await _webView.EnsureCoreWebView2Async(environment);
+                var injectedScript = LoadEmbeddedScript();
+                if (!string.IsNullOrWhiteSpace(injectedScript))
+                {
+                    await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(injectedScript);
+                }
+                _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+                _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+                _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+                _webView.CoreWebView2.Settings.AreDevToolsEnabled = true;
+                _webView.CoreWebView2.Settings.IsZoomControlEnabled = true;
+                _webView.Source = new Uri(TargetUrl);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, "加载失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Close();
+            }
+        }
+
+        private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+        {
+            try
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(e.WebMessageAsJson);
+                var root = document.RootElement;
+                if (!root.TryGetProperty("type", out var typeProperty))
+                {
+                    return;
+                }
+
+                var type = typeProperty.GetString();
+                switch (type)
+                {
+                    case "ready":
+                    case "show":
+                        ShowMainWindow();
+                        ReplyToWeb("ok");
+                        break;
+                    case "toggle":
+                        ToggleVisibility();
+                        ReplyToWeb("ok");
+                        break;
+                    case "hide":
+                    case "close":
+                        HideMainWindow();
+                        ReplyToWeb("ok");
+                        break;
+                    case "exit":
+                        ReplyToWeb("ok");
+                        ExitApplication();
+                        break;
+                    case "isAutoStartEnabled":
+                        ReplyToWeb(IsAutoStartEnabled() ? "true" : "false");
+                        break;
+                    case "setAutoStartEnabled":
+                        var enabled = root.TryGetProperty("enabled", out var enabledProperty) && enabledProperty.GetBoolean();
+                        SetAutoStartEnabled(enabled);
+                        if (_notifyMenu.Items[1] is ToolStripMenuItem menuItem)
+                        {
+                            menuItem.Checked = IsAutoStartEnabled();
+                        }
+                        ReplyToWeb("ok");
+                        break;
+                }
             }
             catch
             {
+                ReplyToWeb("error");
+            }
+        }
+
+        private void ReplyToWeb(string message)
+        {
+            _webView.CoreWebView2.PostWebMessageAsString(message);
+        }
+
+        private static string LoadEmbeddedScript()
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            using var stream = assembly.GetManifestResourceStream("app.js");
+            if (stream is null)
+            {
+                return string.Empty;
             }
 
-            _notifyIconTempPath = null;
-        }
-    }
-
-    private static void ShowNotifyIconMenu(nint hWnd)
-    {
-        var menuHandle = CreatePopupMenu();
-        if (menuHandle == 0)
-        {
-            return;
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
         }
 
-        try
+        private void OnResize(object? sender, EventArgs e)
         {
-            AppendMenu(menuHandle, MfString, MenuToggleWindow, IsWindowCurrentlyVisible() ? "隐藏" : "显示");
-            AppendMenu(menuHandle, MfString | (OperatingSystem.IsWindows() && IsAutoStartEnabled() ? MfChecked : 0), MenuAutoStart, "自动启动");
-            AppendMenu(menuHandle, MfSeparator, 0, string.Empty);
-            AppendMenu(menuHandle, MfString, MenuExit, "退出");
+            if (WindowState == FormWindowState.Minimized)
+            {
+                HideMainWindow();
+            }
+        }
 
-            if (!GetCursorPos(out var point))
+        private void OnFormClosing(object? sender, FormClosingEventArgs e)
+        {
+            if (e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                HideMainWindow();
+            }
+        }
+
+        private void OnShown(object? sender, EventArgs e)
+        {
+            _hasCompletedFirstShow = true;
+        }
+
+        public void ToggleVisibility()
+        {
+            if (Visible && WindowState != FormWindowState.Minimized)
+            {
+                HideMainWindow();
+            }
+            else
+            {
+                ShowMainWindow();
+            }
+        }
+
+        public void ShowMainWindow()
+        {
+            ShowInTaskbar = true;
+            Show();
+            WindowState = FormWindowState.Normal;
+            SetWindowPos(Handle, HwndTopMost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpShowWindow);
+            Activate();
+            BringToFront();
+            SetWindowPos(Handle, HwndNotTopMost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpShowWindow);
+            _ = FocusSearchInputAsync();
+        }
+
+        private void HideMainWindow()
+        {
+            if (!_hasCompletedFirstShow)
             {
                 return;
             }
 
-            _suppressAutoHide = true;
-            SetForegroundWindow(hWnd);
-            TrackPopupMenu(menuHandle, TpMLeftAlign | TpMRightButton, point.X, point.Y, 0, hWnd, 0);
+            ShowInTaskbar = false;
+            WindowState = FormWindowState.Minimized;
+            Hide();
         }
-        finally
+
+        private void ToggleAutoStart()
         {
-            _suppressAutoHide = false;
-            DestroyMenu(menuHandle);
+            SetAutoStartEnabled(!IsAutoStartEnabled());
+            if (_notifyMenu.Items[1] is ToolStripMenuItem menuItem)
+            {
+                menuItem.Checked = IsAutoStartEnabled();
+            }
+        }
+
+        private void ExitApplication()
+        {
+            _notifyIcon.Visible = false;
+            _notifyIcon.Dispose();
+            _notifyMenu.Dispose();
+            Instance = null;
+            Close();
+            Application.ExitThread();
+        }
+
+        private async Task FocusSearchInputAsync()
+        {
+            if (_webView.CoreWebView2 is null)
+            {
+                return;
+            }
+
+            try
+            {
+                await _webView.CoreWebView2.ExecuteScriptAsync("(() => { const ipt = document.querySelector('#search_input'); if (ipt) { window.scrollTo(0, 0); ipt.focus(); ipt.select(); } })();");
+            }
+            catch
+            {
+            }
+        }
+
+        private static Icon? LoadApplicationIcon()
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            using var iconStream = assembly.GetManifestResourceStream("app.ico");
+            return iconStream is null ? null : new Icon(iconStream);
         }
     }
 
@@ -564,9 +347,7 @@ internal class Program
         }
 
         _keyboardProc = KeyboardHookCallback;
-        using var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
-        using var currentModule = currentProcess.MainModule;
-        var moduleHandle = GetModuleHandle(currentModule?.ModuleName);
+        var moduleHandle = GetModuleHandle(null);
         _keyboardHookHandle = SetWindowsHookEx(WhKeyboardLl, _keyboardProc, moduleHandle, 0);
     }
 
@@ -592,10 +373,9 @@ internal class Program
                 && IsKeyPressed(VkShift)
                 && (IsKeyPressed(VkLWin) || IsKeyPressed(VkRWin));
 
-            if (isTogglePressed)
+            if (isTogglePressed && ShellForm.Instance is not null)
             {
-                _pendingKeyboardActivation = true;
-                ToggleWindowVisibility();
+                ShellForm.Instance.BeginInvoke(ShellForm.Instance.ToggleVisibility);
                 return 1;
             }
         }
@@ -608,159 +388,6 @@ internal class Program
         return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
     }
 
-    private static void HideMainWindow()
-    {
-        if (_webview is null)
-        {
-            return;
-        }
-
-        _webview.Dispatch(() =>
-        {
-            if (_windowHandle != 0)
-            {
-                ShowWindow(_windowHandle, SwHide);
-            }
-        });
-    }
-
-    private static void ShowMainWindow()
-    {
-        if (_webview is null)
-        {
-            return;
-        }
-
-        PrepareForegroundActivation();
-
-        _webview.Dispatch(() =>
-        {
-            if (_windowHandle == 0)
-            {
-                return;
-            }
-
-            _showWindowNesting++;
-
-            try
-            {
-                _suppressAutoHide = true;
-
-                if (IsIconic(_windowHandle))
-                {
-                    ShowWindow(_windowHandle, SwRestore);
-                }
-                else
-                {
-                    ShowWindow(_windowHandle, SwShow);
-                }
-
-                PromoteWindowToTopMost();
-                ActivateMainWindow();
-                _pendingKeyboardActivation = false;
-            }
-            finally
-            {
-                _showWindowNesting--;
-                if (_showWindowNesting <= 0)
-                {
-                    _showWindowNesting = 0;
-                    _suppressAutoHide = false;
-                }
-            }
-        });
-    }
-
-    private static void PromoteWindowToTopMost()
-    {
-        if (_windowHandle == 0)
-        {
-            return;
-        }
-
-        const uint flags = SwpNomove | SwpNosize;
-        SetWindowPos(_windowHandle, HwndTopMost, 0, 0, 0, 0, flags);
-        SetWindowPos(_windowHandle, HwndNotTopMost, 0, 0, 0, 0, flags);
-        SetWindowPos(_windowHandle, HwndTopMost, 0, 0, 0, 0, flags);
-    }
-
-    private static void ActivateMainWindow()
-    {
-        if (_windowHandle == 0)
-        {
-            return;
-        }
-
-        var currentThreadId = GetCurrentThreadId();
-        var windowThreadId = GetWindowThreadProcessId(_windowHandle, out _);
-        var attached = false;
-
-        try
-        {
-            if (windowThreadId != 0 && windowThreadId != currentThreadId)
-            {
-                attached = AttachThreadInput(currentThreadId, windowThreadId, true);
-            }
-
-            if (_pendingKeyboardActivation)
-            {
-                AllowSetForegroundWindow(uint.MaxValue);
-            }
-
-            BringWindowToTop(_windowHandle);
-            SetActiveWindow(_windowHandle);
-            SetForegroundWindow(_windowHandle);
-            SetFocus(_windowHandle);
-        }
-        finally
-        {
-            if (attached)
-            {
-                AttachThreadInput(currentThreadId, windowThreadId, false);
-            }
-        }
-    }
-
-    private static void PrepareForegroundActivation()
-    {
-        if (!_pendingKeyboardActivation || _windowHandle == 0)
-        {
-            return;
-        }
-
-        var foregroundWindow = GetForegroundWindow();
-        if (foregroundWindow == 0)
-        {
-            return;
-        }
-
-        var currentThreadId = GetCurrentThreadId();
-        var foregroundThreadId = GetWindowThreadProcessId(foregroundWindow, out _);
-        if (foregroundThreadId == 0 || foregroundThreadId == currentThreadId)
-        {
-            return;
-        }
-
-        var attached = false;
-
-        try
-        {
-            attached = AttachThreadInput(currentThreadId, foregroundThreadId, true);
-            if (attached)
-            {
-                BringWindowToTop(_windowHandle);
-            }
-        }
-        finally
-        {
-            if (attached)
-            {
-                AttachThreadInput(currentThreadId, foregroundThreadId, false);
-            }
-        }
-    }
-
-    [SupportedOSPlatform("windows")]
     private static bool IsAutoStartEnabled()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
@@ -768,27 +395,16 @@ internal class Program
         return string.Equals(value, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase);
     }
 
-    [SupportedOSPlatform("windows")]
     private static void SetAutoStartEnabled(bool enabled)
     {
         using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
         if (enabled)
         {
-            var executablePath = Environment.ProcessPath
-                ?? Path.Combine(AppContext.BaseDirectory, "Translate.exe");
-            key.SetValue(AutoStartValueName, executablePath, RegistryValueKind.String);
+            key.SetValue(AutoStartValueName, Environment.ProcessPath ?? string.Empty);
         }
         else
         {
             key.DeleteValue(AutoStartValueName, throwOnMissingValue: false);
         }
-    }
-
-    private static void ExitApplication()
-    {
-        UnregisterKeyboardHook();
-        RemoveNotifyIcon();
-
-        _webview?.Terminate();
     }
 }

@@ -28,10 +28,6 @@ window.translateHost = {
     exit: () => hostInvoke({ type: 'exit' })
 };
 
-window.addEventListener('DOMContentLoaded', () => {
-    window.translateHost.ready().catch(() => { });
-}, { once: true });
-
 window.addEventListener('beforeunload', (event) => {
     if (!window.translateHost) {
         return;
