@@ -30,6 +30,10 @@ internal class Program
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(nint hWnd);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool BringWindowToTop(nint hWnd);
@@ -109,10 +113,18 @@ internal class Program
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
 
+    [DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AllowSetForegroundWindow(uint dwProcessId);
+
     private const int SwHide = 0;
     private const int SwShow = 5;
     private const int SwRestore = 9;
     private const int GwlWndProc = -4;
+    private const int GwlExStyle = -20;
     private const uint WmClose = 0x0010;
     private const uint WmCommand = 0x0111;
     private const uint WmActivate = 0x0006;
@@ -145,6 +157,11 @@ internal class Program
     private const uint LrDefaultSize = 0x00000040;
     private const uint LrLoadFromFile = 0x00000010;
     private const int IdiApplication = 0x7F00;
+    private const uint SwpNomove = 0x0002;
+    private const uint SwpNosize = 0x0001;
+    private const uint SwpNoactivate = 0x0010;
+    private static readonly nint HwndTopMost = new(-1);
+    private static readonly nint HwndNotTopMost = new(-2);
     private const uint MenuToggleWindow = 1001;
     private const uint MenuAutoStart = 1002;
     private const uint MenuExit = 1003;
@@ -163,6 +180,8 @@ internal class Program
     private static nint _notifyIconHandle;
     private static string? _notifyIconTempPath;
     private static bool _suppressAutoHide;
+    private static int _showWindowNesting;
+    private static bool _pendingKeyboardActivation;
 
     private delegate nint WndProcDelegate(nint hWnd, uint msg, nuint wParam, nint lParam);
     private delegate nint LowLevelKeyboardProc(int nCode, nuint wParam, nint lParam);
@@ -575,6 +594,7 @@ internal class Program
 
             if (isTogglePressed)
             {
+                _pendingKeyboardActivation = true;
                 ToggleWindowVisibility();
                 return 1;
             }
@@ -611,6 +631,8 @@ internal class Program
             return;
         }
 
+        PrepareForegroundActivation();
+
         _webview.Dispatch(() =>
         {
             if (_windowHandle == 0)
@@ -618,17 +640,48 @@ internal class Program
                 return;
             }
 
-            if (IsIconic(_windowHandle))
-            {
-                ShowWindow(_windowHandle, SwRestore);
-            }
-            else
-            {
-                ShowWindow(_windowHandle, SwShow);
-            }
+            _showWindowNesting++;
 
-            ActivateMainWindow();
+            try
+            {
+                _suppressAutoHide = true;
+
+                if (IsIconic(_windowHandle))
+                {
+                    ShowWindow(_windowHandle, SwRestore);
+                }
+                else
+                {
+                    ShowWindow(_windowHandle, SwShow);
+                }
+
+                PromoteWindowToTopMost();
+                ActivateMainWindow();
+                _pendingKeyboardActivation = false;
+            }
+            finally
+            {
+                _showWindowNesting--;
+                if (_showWindowNesting <= 0)
+                {
+                    _showWindowNesting = 0;
+                    _suppressAutoHide = false;
+                }
+            }
         });
+    }
+
+    private static void PromoteWindowToTopMost()
+    {
+        if (_windowHandle == 0)
+        {
+            return;
+        }
+
+        const uint flags = SwpNomove | SwpNosize;
+        SetWindowPos(_windowHandle, HwndTopMost, 0, 0, 0, 0, flags);
+        SetWindowPos(_windowHandle, HwndNotTopMost, 0, 0, 0, 0, flags);
+        SetWindowPos(_windowHandle, HwndTopMost, 0, 0, 0, 0, flags);
     }
 
     private static void ActivateMainWindow()
@@ -649,6 +702,11 @@ internal class Program
                 attached = AttachThreadInput(currentThreadId, windowThreadId, true);
             }
 
+            if (_pendingKeyboardActivation)
+            {
+                AllowSetForegroundWindow(uint.MaxValue);
+            }
+
             BringWindowToTop(_windowHandle);
             SetActiveWindow(_windowHandle);
             SetForegroundWindow(_windowHandle);
@@ -659,6 +717,45 @@ internal class Program
             if (attached)
             {
                 AttachThreadInput(currentThreadId, windowThreadId, false);
+            }
+        }
+    }
+
+    private static void PrepareForegroundActivation()
+    {
+        if (!_pendingKeyboardActivation || _windowHandle == 0)
+        {
+            return;
+        }
+
+        var foregroundWindow = GetForegroundWindow();
+        if (foregroundWindow == 0)
+        {
+            return;
+        }
+
+        var currentThreadId = GetCurrentThreadId();
+        var foregroundThreadId = GetWindowThreadProcessId(foregroundWindow, out _);
+        if (foregroundThreadId == 0 || foregroundThreadId == currentThreadId)
+        {
+            return;
+        }
+
+        var attached = false;
+
+        try
+        {
+            attached = AttachThreadInput(currentThreadId, foregroundThreadId, true);
+            if (attached)
+            {
+                BringWindowToTop(_windowHandle);
+            }
+        }
+        finally
+        {
+            if (attached)
+            {
+                AttachThreadInput(currentThreadId, foregroundThreadId, false);
             }
         }
     }
