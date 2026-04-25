@@ -22,6 +22,7 @@
         <DeleteExistingFiles>true</DeleteExistingFiles>
         <DebugType>none</DebugType>
         <DebugSymbols>false</DebugSymbols>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
         <SatelliteResourceLanguages>en;zh-CN</SatelliteResourceLanguages>
         <GenerateRuntimeConfigDevFile>false</GenerateRuntimeConfigDevFile>
         <AutoreleasePoolSupport>false</AutoreleasePoolSupport>
@@ -35,7 +36,42 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3240.44" />
+        <Reference Include="Microsoft.Web.WebView2.Core">
+            <HintPath>$(NuGetPackageRoot)microsoft.web.webview2\1.0.3240.44\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.Core.dll</HintPath>
+            <Private>true</Private>
+        </Reference>
+        <Reference Include="Microsoft.Web.WebView2.WinForms">
+            <HintPath>$(NuGetPackageRoot)microsoft.web.webview2\1.0.3240.44\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.WinForms.dll</HintPath>
+            <Private>true</Private>
+        </Reference>
     </ItemGroup>
+
+    <ItemGroup>
+        <None Include="$(NuGetPackageRoot)microsoft.web.webview2\1.0.3240.44\runtimes\win-x64\native\WebView2Loader.dll" Condition="'$(RuntimeIdentifier)' == '' Or '$(RuntimeIdentifier)' == 'win-x64'">
+            <Link>WebView2Loader.dll</Link>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        </None>
+        <None Include="$(NuGetPackageRoot)microsoft.web.webview2\1.0.3240.44\runtimes\win-x86\native\WebView2Loader.dll" Condition="'$(PlatformTarget)' == 'x86' Or '$(RuntimeIdentifier)' == 'win-x86'">
+            <Link>WebView2Loader.dll</Link>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        </None>
+        <None Include="$(NuGetPackageRoot)microsoft.web.webview2\1.0.3240.44\runtimes\win-arm64\native\WebView2Loader.dll" Condition="'$(PlatformTarget)' == 'arm64' Or '$(RuntimeIdentifier)' == 'win-arm64'">
+            <Link>WebView2Loader.dll</Link>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        </None>
+    </ItemGroup>
+
+    <Target Name="RemoveWebView2XmlDocs" AfterTargets="Publish">
+        <ItemGroup>
+            <WebView2XmlDocs Include="$(PublishDir)Microsoft.Web.WebView2.Core.xml" />
+            <WebView2XmlDocs Include="$(PublishDir)Microsoft.Web.WebView2.WinForms.xml" />
+            <WebView2XmlDocs Include="$(PublishDir)Microsoft.Web.WebView2.Wpf.xml" />
+        </ItemGroup>
+
+        <Delete Files="@(WebView2XmlDocs)" TreatErrorsAsWarnings="true" />
+    </Target>
 
 </Project>
