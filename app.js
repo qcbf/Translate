@@ -84,6 +84,10 @@ function initOptimization() {
         RemoveElement(".top-banner-wrap");
     }, 500);
 
+    setInterval(() => {
+        document.querySelector(".promo-ad")?.remove();
+    }, 2000);
+
     // 首页自动跳转
     if (window.location.href === 'https://dict.youdao.com/') {
         window.location.href = 'https://dict.youdao.com/result?word=.&lang=en';
