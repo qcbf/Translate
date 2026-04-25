@@ -26,6 +26,15 @@ internal static class Program
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
+    [DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern nint SendMessage(nint hWnd, int msg, int wParam, int lParam);
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, nint hMod, uint dwThreadId);
 
@@ -57,11 +66,28 @@ internal static class Program
     private const uint VkUp = 0x26;
     private const uint VkRight = 0x27;
     private const uint VkDown = 0x28;
+    private const uint VkEscape = 0x1B;
     private const uint VkT = 0x54;
     private const int WindowMoveStep = 20;
     private const uint SwpNoMove = 0x0002;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpShowWindow = 0x0040;
+    private const int WmNclbuttondown = 0x00A1;
+    private const int WmNchittest = 0x0084;
+    private const int HtCaption = 0x0002;
+    private const int HtClient = 0x0001;
+    private const int HtLeft = 0x000A;
+    private const int HtRight = 0x000B;
+    private const int HtTop = 0x000C;
+    private const int HtTopLeft = 0x000D;
+    private const int HtTopRight = 0x000E;
+    private const int HtBottom = 0x000F;
+    private const int HtBottomLeft = 0x0010;
+    private const int HtBottomRight = 0x0011;
+    private const int TitleBarHeight = 32;
+    private const int CaptionButtonWidth = 46;
+    private const int HelpButtonWidth = 52;
+    private const int ResizeBorderThickness = 8;
 
     private static readonly nint HwndTopMost = new(-1);
     private static readonly nint HwndNotTopMost = new(-2);
@@ -119,6 +145,12 @@ internal static class Program
         private readonly NotifyIcon _notifyIcon;
         private readonly ContextMenuStrip _notifyMenu;
         private readonly System.Windows.Forms.Timer _moveTimer;
+        private readonly Panel _titleBar;
+        private readonly PictureBox _titleIcon;
+        private readonly Label _titleLabel;
+        private readonly Button _helpButton;
+        private readonly Button _minimizeButton;
+        private readonly Button _closeButton;
         private bool _hasCompletedFirstShow;
         private MoveDirection? _currentMoveDirection;
 
@@ -130,11 +162,14 @@ internal static class Program
             ShowInTaskbar = true;
             WindowState = FormWindowState.Normal;
             Text = Assembly.GetExecutingAssembly().GetName().Name ?? "Translate";
+            FormBorderStyle = FormBorderStyle.None;
+            Padding = new Padding(1);
             Width = 620;
             Height = 520;
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(620, 520);
             Icon = LoadApplicationIcon();
+            BackColor = SystemColors.AppWorkspace;
             _userDataFolder = Path.Combine(Path.GetTempPath(), "Translate", "WebView2");
 
             _webView = new WebView2
@@ -142,6 +177,42 @@ internal static class Program
                 Dock = DockStyle.Fill,
                 DefaultBackgroundColor = Color.White
             };
+
+            _titleBar = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = TitleBarHeight,
+                BackColor = SystemColors.Control
+            };
+            _titleBar.MouseDown += TitleBarMouseDown;
+
+            _titleIcon = new PictureBox
+            {
+                Dock = DockStyle.Left,
+                Width = TitleBarHeight,
+                SizeMode = PictureBoxSizeMode.CenterImage,
+                Image = Icon?.ToBitmap()
+            };
+            _titleIcon.MouseDown += TitleBarMouseDown;
+
+            _titleLabel = new Label
+            {
+                AutoSize = false,
+                Dock = DockStyle.Fill,
+                Text = Text,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(4, 0, 0, 0)
+            };
+            _titleLabel.MouseDown += TitleBarMouseDown;
+
+            _helpButton = CreateTitleBarButton("Help", HelpButtonWidth);
+            _helpButton.Click += (_, _) => ShowHelpDialog();
+
+            _minimizeButton = CreateTitleBarButton("—", CaptionButtonWidth);
+            _minimizeButton.Click += (_, _) => WindowState = FormWindowState.Minimized;
+
+            _closeButton = CreateTitleBarButton("✕", CaptionButtonWidth);
+            _closeButton.Click += (_, _) => HideMainWindow();
 
             _notifyMenu = new ContextMenuStrip();
             _notifyMenu.Items.Add("显示/隐藏", null, (_, _) => ToggleVisibility());
@@ -168,11 +239,18 @@ internal static class Program
             };
             _moveTimer.Tick += (_, _) => MoveWindowStep();
 
+            _titleBar.Controls.Add(_titleLabel);
+            _titleBar.Controls.Add(_titleIcon);
+            _titleBar.Controls.Add(_helpButton);
+            _titleBar.Controls.Add(_minimizeButton);
+            _titleBar.Controls.Add(_closeButton);
             Controls.Add(_webView);
+            Controls.Add(_titleBar);
             Load += OnLoadAsync;
             Resize += OnResize;
             FormClosing += OnFormClosing;
             Shown += OnShown;
+            UpdateTitleBarButtons();
         }
 
         private async void OnLoadAsync(object? sender, EventArgs e)
@@ -299,7 +377,14 @@ internal static class Program
         {
             if (Visible && WindowState != FormWindowState.Minimized)
             {
-                HideMainWindow();
+                if (IsWindowForeground())
+                {
+                    HideMainWindow();
+                }
+                else
+                {
+                    ShowMainWindow();
+                }
             }
             else
             {
@@ -312,10 +397,12 @@ internal static class Program
             ShowInTaskbar = true;
             Show();
             WindowState = FormWindowState.Normal;
+            UpdateTitleBarButtons();
             SetWindowPos(Handle, HwndTopMost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpShowWindow);
             Activate();
             BringToFront();
             SetWindowPos(Handle, HwndNotTopMost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpShowWindow);
+            _webView.Focus();
             _ = FocusSearchInputAsync();
         }
 
@@ -354,6 +441,25 @@ internal static class Program
             Hide();
         }
 
+        private bool IsWindowForeground()
+        {
+            return IsHandleCreated && GetForegroundWindow() == Handle;
+        }
+
+        public bool IsVisibleInForeground()
+        {
+            return Visible && WindowState != FormWindowState.Minimized && IsWindowForeground();
+        }
+
+        public void HandleHideKey(uint virtualKey)
+        {
+            if (virtualKey == VkEscape)
+            {
+                HideMainWindow();
+                return;
+            }
+        }
+
         private void ToggleAutoStart()
         {
             SetAutoStartEnabled(!IsAutoStartEnabled());
@@ -382,7 +488,9 @@ internal static class Program
 
             try
             {
+                _webView.Focus();
                 await _webView.CoreWebView2.ExecuteScriptAsync(SearchInputScript);
+                _webView.Focus();
             }
             catch (Exception ex)
             {
@@ -395,6 +503,123 @@ internal static class Program
             var assembly = Assembly.GetExecutingAssembly();
             using var iconStream = assembly.GetManifestResourceStream("app.ico");
             return iconStream is null ? null : new Icon(iconStream);
+        }
+
+        private Button CreateTitleBarButton(string text, int width)
+        {
+            return new Button
+            {
+                Text = text,
+                Dock = DockStyle.Right,
+                Width = width,
+                FlatStyle = FlatStyle.Flat,
+                TabStop = false,
+                Margin = Padding.Empty,
+                FlatAppearance =
+                {
+                    BorderSize = 0
+                }
+            };
+        }
+
+        private void UpdateTitleBarButtons()
+        {
+            _titleLabel.Text = Text;
+        }
+
+        private void ShowHelpDialog()
+        {
+            MessageBox.Show(
+                this,
+                "显示/隐藏快捷键：Ctrl + Shift + Win + T\n隐藏快捷键：Esc\n移动窗口快捷键：Alt + 方向键",
+                "帮助",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+
+        private void TitleBarMouseDown(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
+            {
+                return;
+            }
+
+            ReleaseCapture();
+            SendMessage(Handle, WmNclbuttondown, HtCaption, 0);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WmNchittest)
+            {
+                base.WndProc(ref m);
+                if (WindowState == FormWindowState.Normal)
+                {
+                    var clientPoint = PointToClient(new Point(
+                        unchecked((short)(long)m.LParam),
+                        unchecked((short)((long)m.LParam >> 16))));
+
+                    m.Result = (nint)GetResizeHitTest(clientPoint);
+                    if ((int)m.Result != HtClient)
+                    {
+                        return;
+                    }
+                }
+
+                return;
+            }
+
+            base.WndProc(ref m);
+        }
+
+        private int GetResizeHitTest(Point point)
+        {
+            var left = point.X <= ResizeBorderThickness;
+            var right = point.X >= ClientSize.Width - ResizeBorderThickness;
+            var top = point.Y <= ResizeBorderThickness;
+            var bottom = point.Y >= ClientSize.Height - ResizeBorderThickness;
+
+            if (left && top)
+            {
+                return HtTopLeft;
+            }
+
+            if (right && top)
+            {
+                return HtTopRight;
+            }
+
+            if (left && bottom)
+            {
+                return HtBottomLeft;
+            }
+
+            if (right && bottom)
+            {
+                return HtBottomRight;
+            }
+
+            if (left)
+            {
+                return HtLeft;
+            }
+
+            if (right)
+            {
+                return HtRight;
+            }
+
+            if (top)
+            {
+                return HtTop;
+            }
+
+            if (bottom)
+            {
+                return HtBottom;
+            }
+
+            return HtClient;
         }
 
         private void MoveWindowStep()
@@ -468,6 +693,14 @@ internal static class Program
                     return 1;
                 }
 
+                if (ShellForm.Instance is not null
+                    && ShellForm.Instance.IsVisibleInForeground()
+                    && IsHideTestKey(hookData.VkCode))
+                {
+                    ShellForm.Instance.BeginInvoke(() => ShellForm.Instance.HandleHideKey(hookData.VkCode));
+                    return 1;
+                }
+
                 if (IsKeyPressed(VkMenu) && TryGetMoveDirection(hookData.VkCode, out var moveDirection) && ShellForm.Instance is not null)
                 {
                     _activeMoveDirection = moveDirection;
@@ -508,6 +741,11 @@ internal static class Program
         };
 
         return virtualKey is VkLeft or VkUp or VkRight or VkDown;
+    }
+
+    private static bool IsHideTestKey(uint virtualKey)
+    {
+        return virtualKey == VkEscape;
     }
 
     private static bool IsKeyPressed(int virtualKey)
