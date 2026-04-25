@@ -10,6 +10,8 @@ namespace Translate;
 
 internal static class Program
 {
+    private const string SearchInputScript = "(() => { const ipt = document.querySelector('#search_input'); if (ipt) { window.scrollTo(0, 0); ipt.focus(); ipt.select(); } })();";
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern nint GetModuleHandle(string? lpModuleName);
 
@@ -82,9 +84,15 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
         RegisterKeyboardHook();
-        using var form = new ShellForm();
-        Application.Run(form);
-        UnregisterKeyboardHook();
+        try
+        {
+            using var form = new ShellForm();
+            Application.Run(form);
+        }
+        finally
+        {
+            UnregisterKeyboardHook();
+        }
     }
 
     private sealed class ShellForm : Form
@@ -163,6 +171,7 @@ internal static class Program
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine(ex);
                 MessageBox.Show(this, ex.Message, "加载失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Close();
             }
@@ -214,15 +223,16 @@ internal static class Program
                         break;
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine(ex);
                 ReplyToWeb("error");
             }
         }
 
         private void ReplyToWeb(string message)
         {
-            _webView.CoreWebView2.PostWebMessageAsString(message);
+            _webView.CoreWebView2?.PostWebMessageAsString(message);
         }
 
         private static string LoadEmbeddedScript()
@@ -324,10 +334,11 @@ internal static class Program
 
             try
             {
-                await _webView.CoreWebView2.ExecuteScriptAsync("(() => { const ipt = document.querySelector('#search_input'); if (ipt) { window.scrollTo(0, 0); ipt.focus(); ipt.select(); } })();");
+                await _webView.CoreWebView2.ExecuteScriptAsync(SearchInputScript);
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine(ex);
             }
         }
 
@@ -391,8 +402,10 @@ internal static class Program
     private static bool IsAutoStartEnabled()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
-        var value = key?.GetValue(AutoStartValueName) as string;
-        return string.Equals(value, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase);
+        var value = NormalizeAutoStartPath(key?.GetValue(AutoStartValueName) as string);
+        var processPath = NormalizeAutoStartPath(Environment.ProcessPath);
+        return !string.IsNullOrEmpty(processPath)
+            && string.Equals(value, processPath, StringComparison.OrdinalIgnoreCase);
     }
 
     private static void SetAutoStartEnabled(bool enabled)
@@ -400,11 +413,27 @@ internal static class Program
         using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
         if (enabled)
         {
-            key.SetValue(AutoStartValueName, Environment.ProcessPath ?? string.Empty);
+            var processPath = Environment.ProcessPath;
+            if (!string.IsNullOrWhiteSpace(processPath))
+            {
+                key.SetValue(AutoStartValueName, QuoteCommandPath(processPath));
+            }
         }
         else
         {
             key.DeleteValue(AutoStartValueName, throwOnMissingValue: false);
         }
+    }
+
+    private static string NormalizeAutoStartPath(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim().Trim('"');
+    }
+
+    private static string QuoteCommandPath(string path)
+    {
+        return string.IsNullOrWhiteSpace(path) ? string.Empty : $"\"{path}\"";
     }
 }

@@ -47,7 +47,7 @@ if (document.readyState === 'loading') {
 
 function initOptimization() {
     // 辅助函数：安全执行DOM操作
-    function Element(el, func) {
+    function withElement(el, func) {
         if (typeof el === "string") {
             el = document.querySelector(el);
         }
@@ -59,34 +59,41 @@ function initOptimization() {
     }
 
     function RemoveElement(el) {
-        Element(el, (el) => el.remove());
+        withElement(el, (el) => el.remove());
+    }
+
+    function removePromoAd() {
+        document.querySelector(".promo-ad")?.remove();
     }
 
     // 页面焦点事件优化
-    window.onfocus = function () {
+    window.addEventListener('focus', () => {
         let ipt = document.querySelector("#search_input");
         if (ipt) {
             window.scrollTo(0, 0);
             ipt.focus();
             ipt.select();
-            // setTimeout(() => {
-            // }, 100);
         }
-    };
+    });
 
-    window.onblur = function () {
+    window.addEventListener('blur', () => {
         localStorage.removeItem("historyList");
-    };
+    });
 
     // 延迟执行部分初始化操作
     setTimeout(function () {
-        Element("#autosuggest-autosuggest__results", el => el.style.pointerEvents = "none");
+        withElement("#autosuggest-autosuggest__results", el => el.style.pointerEvents = "none");
         RemoveElement(".top-banner-wrap");
+        removePromoAd();
     }, 500);
 
-    setInterval(() => {
-        document.querySelector(".promo-ad")?.remove();
-    }, 2000);
+    const observer = new MutationObserver(() => {
+        removePromoAd();
+    });
+
+    if (document.body) {
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
 
     // 首页自动跳转
     if (window.location.href === 'https://dict.youdao.com/') {
@@ -115,7 +122,7 @@ function initOptimization() {
     ];
 
     styleModifications.forEach(({ selector, style, value }) => {
-        Element(selector, el => el.style[style] = value);
+        withElement(selector, el => el.style[style] = value);
     });
 
     // 添加自定义CSS样式
