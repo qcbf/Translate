@@ -151,8 +151,10 @@ internal static class Program
         private readonly Button _helpButton;
         private readonly Button _minimizeButton;
         private readonly Button _closeButton;
+        private readonly Bitmap? _cachedTitleIcon;
         private bool _hasCompletedFirstShow;
         private MoveDirection? _currentMoveDirection;
+        private CoreWebView2Environment? _webViewEnvironment;
 
         public static ShellForm? Instance { get; private set; }
 
@@ -171,6 +173,7 @@ internal static class Program
             Icon = LoadApplicationIcon();
             BackColor = SystemColors.AppWorkspace;
             _userDataFolder = Path.Combine(Path.GetTempPath(), "Translate", "WebView2");
+            _cachedTitleIcon = Icon?.ToBitmap();
 
             _webView = new WebView2
             {
@@ -191,7 +194,7 @@ internal static class Program
                 Dock = DockStyle.Left,
                 Width = TitleBarHeight,
                 SizeMode = PictureBoxSizeMode.CenterImage,
-                Image = Icon?.ToBitmap()
+                Image = _cachedTitleIcon
             };
             _titleIcon.MouseDown += TitleBarMouseDown;
 
@@ -235,7 +238,7 @@ internal static class Program
 
             _moveTimer = new System.Windows.Forms.Timer
             {
-                Interval = 16
+                Interval = 32
             };
             _moveTimer.Tick += (_, _) => MoveWindowStep();
 
@@ -258,8 +261,8 @@ internal static class Program
             try
             {
                 Directory.CreateDirectory(_userDataFolder);
-                var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: _userDataFolder);
-                await _webView.EnsureCoreWebView2Async(environment);
+                _webViewEnvironment ??= await CoreWebView2Environment.CreateAsync(userDataFolder: _userDataFolder);
+                await _webView.EnsureCoreWebView2Async(_webViewEnvironment);
                 var injectedScript = LoadEmbeddedScript();
                 if (!string.IsNullOrWhiteSpace(injectedScript))
                 {
@@ -404,6 +407,19 @@ internal static class Program
             SetWindowPos(Handle, HwndNotTopMost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpShowWindow);
             _webView.Focus();
             _ = FocusSearchInputAsync();
+
+            // 恢复 WebView2 活动状态
+            if (_webView.CoreWebView2 is not null)
+            {
+                try
+                {
+                    _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+                }
+                catch
+                {
+                    // 忽略错误
+                }
+            }
         }
 
         public void StartWindowMove(MoveDirection direction)
@@ -435,6 +451,23 @@ internal static class Program
             {
                 return;
             }
+
+            // 暂停 WebView2 以降低 CPU/GPU 使用率
+            if (_webView.CoreWebView2 is not null)
+            {
+                try
+                {
+                    _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+                    // 通过执行空脚本保持连接但不触发渲染
+                }
+                catch
+                {
+                    // 忽略错误
+                }
+            }
+
+            // 停止移动计时器以减少 CPU 唤醒
+            _moveTimer.Stop();
 
             ShowInTaskbar = false;
             WindowState = FormWindowState.Minimized;
@@ -474,6 +507,9 @@ internal static class Program
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             _notifyMenu.Dispose();
+            _moveTimer.Dispose();
+            _cachedTitleIcon?.Dispose();
+            _webView.Dispose();
             Instance = null;
             Close();
             Application.ExitThread();
@@ -496,6 +532,17 @@ internal static class Program
             {
                 System.Diagnostics.Debug.WriteLine(ex);
             }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _moveTimer.Dispose();
+                _cachedTitleIcon?.Dispose();
+                _webView.Dispose();
+            }
+            base.Dispose(disposing);
         }
 
         private static Icon? LoadApplicationIcon()
@@ -701,7 +748,7 @@ internal static class Program
                     return 1;
                 }
 
-                if (IsKeyPressed(VkMenu) && TryGetMoveDirection(hookData.VkCode, out var moveDirection) && ShellForm.Instance is not null)
+                if (IsKeyPressed(VkMenu) && TryGetMoveDirection(hookData.VkCode, out var moveDirection) && ShellForm.Instance is not null && ShellForm.Instance.IsVisibleInForeground())
                 {
                     _activeMoveDirection = moveDirection;
                     ShellForm.Instance.BeginInvoke(() => ShellForm.Instance.StartWindowMove(moveDirection));
@@ -715,7 +762,6 @@ internal static class Program
                 {
                     _activeMoveDirection = null;
                     ShellForm.Instance.BeginInvoke(() => ShellForm.Instance.StopWindowMove(releasedDirection));
-                    return 1;
                 }
 
                 if (hookData.VkCode == VkMenu && _activeMoveDirection is { } activeDirection)
