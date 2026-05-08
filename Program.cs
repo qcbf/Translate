@@ -52,6 +52,7 @@ internal static class Program
     private const string TargetUrl = "https://dict.youdao.com/result?word=.";
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string AutoStartValueName = "Translate";
+    private const string AutoStartMinimizedArgument = "--autostart-minimized";
     private const int WhKeyboardLl = 13;
     private const uint WmKeyDown = 0x0100;
     private const uint WmKeyUp = 0x0101;
@@ -95,6 +96,7 @@ internal static class Program
     private static LowLevelKeyboardProc? _keyboardProc;
     private static nint _keyboardHookHandle;
     private static ShellForm.MoveDirection? _activeMoveDirection;
+    private static bool _launchFromAutoStart;
 
     private delegate nint LowLevelKeyboardProc(int nCode, nuint wParam, nint lParam);
 
@@ -109,8 +111,10 @@ internal static class Program
     }
 
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
+        _launchFromAutoStart = args.Any(arg => string.Equals(arg, AutoStartMinimizedArgument, StringComparison.OrdinalIgnoreCase));
+
         var consoleWindow = GetConsoleWindow();
         if (consoleWindow != 0)
         {
@@ -152,6 +156,7 @@ internal static class Program
         private readonly Button _minimizeButton;
         private readonly Button _closeButton;
         private readonly Bitmap? _cachedTitleIcon;
+        private readonly bool _startMinimizedToTray;
         private bool _hasCompletedFirstShow;
         private MoveDirection? _currentMoveDirection;
         private CoreWebView2Environment? _webViewEnvironment;
@@ -161,6 +166,7 @@ internal static class Program
         public ShellForm()
         {
             Instance = this;
+            _startMinimizedToTray = _launchFromAutoStart;
             ShowInTaskbar = true;
             WindowState = FormWindowState.Normal;
             Text = Assembly.GetExecutingAssembly().GetName().Name ?? "Translate";
@@ -180,6 +186,13 @@ internal static class Program
                 Dock = DockStyle.Fill,
                 DefaultBackgroundColor = Color.White
             };
+
+            if (_startMinimizedToTray)
+            {
+                ShowInTaskbar = false;
+                WindowState = FormWindowState.Minimized;
+                Opacity = 0;
+            }
 
             _titleBar = new Panel
             {
@@ -374,6 +387,11 @@ internal static class Program
         private void OnShown(object? sender, EventArgs e)
         {
             _hasCompletedFirstShow = true;
+
+            if (_startMinimizedToTray)
+            {
+                BeginInvoke(HideMainWindow);
+            }
         }
 
         public void ToggleVisibility()
@@ -397,6 +415,11 @@ internal static class Program
 
         public void ShowMainWindow()
         {
+            if (Opacity == 0)
+            {
+                Opacity = 1;
+            }
+
             ShowInTaskbar = true;
             Show();
             WindowState = FormWindowState.Normal;
@@ -816,7 +839,7 @@ internal static class Program
             var processPath = Environment.ProcessPath;
             if (!string.IsNullOrWhiteSpace(processPath))
             {
-                key.SetValue(AutoStartValueName, QuoteCommandPath(processPath));
+                key.SetValue(AutoStartValueName, $"{QuoteCommandPath(processPath)} {AutoStartMinimizedArgument}");
             }
         }
         else
@@ -827,9 +850,21 @@ internal static class Program
 
     private static string NormalizeAutoStartPath(string? value)
     {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalizedValue = value.Trim();
+        var argumentIndex = normalizedValue.IndexOf($" {AutoStartMinimizedArgument}", StringComparison.OrdinalIgnoreCase);
+        if (argumentIndex >= 0)
+        {
+            normalizedValue = normalizedValue[..argumentIndex];
+        }
+
         return string.IsNullOrWhiteSpace(value)
             ? string.Empty
-            : value.Trim().Trim('"');
+            : normalizedValue.Trim().Trim('"');
     }
 
     private static string QuoteCommandPath(string path)
