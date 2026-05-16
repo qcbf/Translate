@@ -87,12 +87,18 @@ function initOptimization() {
         removePromoAd();
     }, 500);
 
+    // 使用防抖的 MutationObserver，避免每次 DOM 变动都执行
+    let adCheckTimer = 0;
     const observer = new MutationObserver(() => {
-        removePromoAd();
+        if (adCheckTimer) return;
+        adCheckTimer = setTimeout(() => {
+            adCheckTimer = 0;
+            removePromoAd();
+        }, 200);
     });
 
     if (document.body) {
-        observer.observe(document.body, { childList: true, subtree: true });
+        observer.observe(document.body, { childList: true, subtree: false });
     }
 
     // 首页自动跳转

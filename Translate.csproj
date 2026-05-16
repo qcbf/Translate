@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <OutputType>Exe</OutputType>
+        <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0-windows</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
@@ -17,6 +17,12 @@
         <DebugType>none</DebugType>
         <DebugSymbols>false</DebugSymbols>
         <SatelliteResourceLanguages>en;zh-CN</SatelliteResourceLanguages>
+        <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+        <MetricsSupport>false</MetricsSupport>
+        <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+        <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+        <StackTraceSupport>false</StackTraceSupport>
+        <OptimizationPreference>Size</OptimizationPreference>
     </PropertyGroup>
 
     <ItemGroup>

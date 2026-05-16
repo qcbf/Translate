@@ -15,13 +15,6 @@ internal static class Program
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern nint GetModuleHandle(string? lpModuleName);
 
-    [DllImport("kernel32.dll")]
-    private static extern nint GetConsoleWindow();
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool ShowWindow(nint hWnd, int nCmdShow);
-
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
@@ -48,7 +41,6 @@ internal static class Program
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
 
-    private const int SwHide = 0;
     private const string TargetUrl = "https://dict.youdao.com/result?word=.";
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string AutoStartValueName = "Translate";
@@ -111,12 +103,6 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
-        var consoleWindow = GetConsoleWindow();
-        if (consoleWindow != 0)
-        {
-            ShowWindow(consoleWindow, SwHide);
-        }
-
         ApplicationConfiguration.Initialize();
         RegisterKeyboardHook();
         try
@@ -405,21 +391,12 @@ internal static class Program
             Activate();
             BringToFront();
             SetWindowPos(Handle, HwndNotTopMost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpShowWindow);
+
+            // 恢复 WebView2 渲染进程
+            try { _webView.CoreWebView2?.Resume(); } catch { }
+
             _webView.Focus();
             _ = FocusSearchInputAsync();
-
-            // 恢复 WebView2 活动状态
-            if (_webView.CoreWebView2 is not null)
-            {
-                try
-                {
-                    _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
-                }
-                catch
-                {
-                    // 忽略错误
-                }
-            }
         }
 
         public void StartWindowMove(MoveDirection direction)
@@ -452,26 +429,16 @@ internal static class Program
                 return;
             }
 
-            // 暂停 WebView2 以降低 CPU/GPU 使用率
-            if (_webView.CoreWebView2 is not null)
-            {
-                try
-                {
-                    _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
-                    // 通过执行空脚本保持连接但不触发渲染
-                }
-                catch
-                {
-                    // 忽略错误
-                }
-            }
-
-            // 停止移动计时器以减少 CPU 唤醒
             _moveTimer.Stop();
-
             ShowInTaskbar = false;
             WindowState = FormWindowState.Minimized;
             Hide();
+
+            // 挂起 WebView2 渲染进程以降低 CPU/GPU/内存占用
+            if (_webView.CoreWebView2 is not null)
+            {
+                _ = _webView.CoreWebView2.TrySuspendAsync();
+            }
         }
 
         private bool IsWindowForeground()
